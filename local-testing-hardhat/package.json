@@ -19,6 +19,8 @@
   },
   "scripts": {
     "test": "hardhat test",
-    "deploy-local" : "npx hardhat run scripts/deploy.ts --network hardhat"
+    "compile": "hardhat compile",
+    "node": "hardhat node",
+    "deploy:localhost": "hardhat clean && hardhat compile && hardhat run scripts/deploy.ts --network localhost"
   }
 }

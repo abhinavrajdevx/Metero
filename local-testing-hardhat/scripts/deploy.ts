@@ -1,7 +1,10 @@
-// scripts/deploy.ts
 import hre from "hardhat";
 import fs from "node:fs";
 import path from "node:path";
+
+// 1st account = deployer
+// 2nd account = provider
+// 3rd account = user (tester)
 
 const { ethers, network } = hre;
 
@@ -20,8 +23,8 @@ async function main() {
 
   // --------- config from env ----------
   const PER_CALL_LIMIT = BigInt(process.env.PER_CALL_LIMIT ?? "50000000"); // 50 USDC (6dp)
-  const INIT_MINT_USDC = BigInt(process.env.INIT_MINT_USDC ?? "0");        // e.g., 1000 USDC = 1000000000
-  const INIT_STAKE_USDC = BigInt(process.env.INIT_STAKE_USDC ?? "0");      // e.g., 100 USDC = 100000000
+  const INIT_MINT_USDC = BigInt(process.env.INIT_MINT_USDC ?? "0"); // e.g., 1000 USDC = 1000000000
+  const INIT_STAKE_USDC = BigInt(process.env.INIT_STAKE_USDC ?? "0"); // e.g., 100 USDC = 100000000
   const INIT_STAKE_USER = process.env.INIT_STAKE_USER?.trim();
   const TOKEN_NAME = process.env.TOKEN_NAME ?? "Mock USDC";
   const TOKEN_SYMBOL = process.env.TOKEN_SYMBOL ?? "mUSDC";
@@ -39,12 +42,16 @@ async function main() {
 
   // Optional initial mint (to deployer and/or INIT_STAKE_USER)
   if (INIT_MINT_USDC > 0n) {
-    console.log(`Minting ${INIT_MINT_USDC} (6dp) to deployer ${deployer.address}`);
+    console.log(
+      `Minting ${INIT_MINT_USDC} (6dp) to deployer ${deployer.address}`
+    );
     const tx = await usdc.mint(deployer.address, INIT_MINT_USDC);
     await tx.wait();
   }
   if (INIT_STAKE_USER && INIT_STAKE_USDC > 0n && INIT_STAKE_USER !== "") {
-    console.log(`Minting ${INIT_STAKE_USDC} (6dp) to INIT_STAKE_USER ${INIT_STAKE_USER}`);
+    console.log(
+      `Minting ${INIT_STAKE_USDC} (6dp) to INIT_STAKE_USER ${INIT_STAKE_USER}`
+    );
     const tx2 = await usdc.mint(INIT_STAKE_USER, INIT_STAKE_USDC);
     await tx2.wait();
   }
@@ -79,10 +86,14 @@ async function main() {
     // If INIT_STAKE_USER is not the deployer, we can’t sign for them here.
     // Provide a helper if INIT_STAKE_USER == deployer.address:
     if (INIT_STAKE_USER.toLowerCase() === deployer.address.toLowerCase()) {
-      console.log(`Approving and depositing ${INIT_STAKE_USDC} to Escrow from deployer`);
+      console.log(
+        `Approving and depositing ${INIT_STAKE_USDC} to Escrow from deployer`
+      );
       await (await usdc.approve(escrowAddr, INIT_STAKE_USDC)).wait();
       await (await escrow.deposit(INIT_STAKE_USDC)).wait();
-      console.log(`Escrow balance(deployer) = ${await escrow.balance(deployer.address)}`);
+      console.log(
+        `Escrow balance(deployer) = ${await escrow.balance(deployer.address)}`
+      );
     } else {
       console.log(
         `INIT_STAKE_USER is not the deployer. Ask that user to:\n` +
@@ -100,6 +111,37 @@ async function main() {
     verifyingContract: settlementAddr,
   };
 
+  const EAS = await ethers.getContractFactory("EAS");
+
+  // If already deployed, use getContractAt instead:
+  // const eas = await ethers.getContractAt("EAS", "<addr>");
+  const eas = await EAS.deploy(settlementAddr, escrowAddr, usdcAddr);
+
+  await eas.waitForDeployment();
+  const easAddr = await eas.getAddress();
+  console.log("EAS deployed:", easAddr);
+
+  const [, provider] = await ethers.getSigners();
+  console.log(
+    "Registering provider and service on EAS with address:",
+    provider.address
+  );
+  await eas.connect(provider).registerProvider("ws://localhost:9090", "");
+  let serviceId = ethers.keccak256(ethers.toUtf8Bytes("summarizer:v1"));
+  serviceId =
+    "0x04785b390a3f0f742cd4cdad4a10155b7ce8082e9670fc50b11c6e83753c14bf";
+  await eas.connect(provider).registerService(
+    serviceId,
+    "Summarizer",
+    "Summarize text",
+    0, // Unit.CALL
+    100_000, // $0.10 (6dp)
+    "ipfs://requestSchemaCid",
+    "ipfs://responseSchemaCid",
+    true // allowDirect
+  );
+  console.log("Service registered:", serviceId);
+
   // --------- write deployments file ----------
   const out = {
     network: network.name,
@@ -108,6 +150,7 @@ async function main() {
       usdc: usdcAddr,
       escrow: escrowAddr,
       settlement: settlementAddr,
+      eas: easAddr,
     },
     eip712Domain: domain,
     settings: {

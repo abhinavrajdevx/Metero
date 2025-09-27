@@ -1,0 +1,20 @@
+{
+  "dependencies": {
+    "ethers": "^6.15.0",
+    "mcp-sdk": "file:./mcp-sdk",
+    "node-ts": "^8.0.8",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  },
+  "name": "package-minimal",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
